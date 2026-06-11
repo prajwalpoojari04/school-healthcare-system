@@ -71,6 +71,10 @@ const studentSchema = new mongoose.Schema(
     address: {
       type: String,
     },
+    grade: {
+  type: String,
+  required: true,
+}
   },
   {
     timestamps: true,

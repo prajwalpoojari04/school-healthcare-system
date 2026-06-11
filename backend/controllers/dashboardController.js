@@ -1,6 +1,7 @@
 const Student = require("../models/Student");
 const MedicalRecord = require("../models/MedicalRecord");
 
+// GET DASHBOARD STATS
 exports.getDashboardStats = async (req, res) => {
   try {
     const totalStudents = await Student.countDocuments();
@@ -39,6 +40,7 @@ exports.getDashboardStats = async (req, res) => {
     });
   }
 };
+
 // GET RECENT VISITS
 exports.getRecentVisits = async (req, res) => {
   try {
@@ -59,32 +61,62 @@ exports.getRecentVisits = async (req, res) => {
     });
   }
 };
+
 // GET ANALYTICS
 exports.getAnalytics = async (req, res) => {
   try {
+    // Disease Analytics
     const analytics = await MedicalRecord.aggregate([
       {
         $group: {
           _id: "$diagnosis",
-          count: { $sum: 1 }
-        }
+          count: { $sum: 1 },
+        },
       },
       {
         $sort: {
-          count: -1
-        }
-      }
+          count: -1,
+        },
+      },
+    ]);
+
+    // Grade Analytics
+    const gradeVisits = await MedicalRecord.aggregate([
+      {
+        $lookup: {
+          from: "students",
+          localField: "student",
+          foreignField: "_id",
+          as: "studentInfo",
+        },
+      },
+      {
+        $unwind: "$studentInfo",
+      },
+      {
+        $group: {
+          _id: "$studentInfo.grade",
+          visits: { $sum: 1 },
+        },
+      },
+      {
+        $sort: {
+          _id: 1,
+        },
+      },
     ]);
 
     res.status(200).json({
       success: true,
-      analytics
+      analytics,
+      gradeVisits,
     });
-
   } catch (error) {
+    console.log(error);
+
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };

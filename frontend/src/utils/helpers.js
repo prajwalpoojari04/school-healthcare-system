@@ -157,13 +157,23 @@ export const toStudentPayload = (data) => ({
   lastName: data.lastName,
   dateOfBirth: data.dateOfBirth,
   gender: data.gender,
+
+  // ADD THIS LINE
+  grade: data.grade,
+
   bloodGroup: data.bloodGroup || data.bloodType,
   allergies: data.allergies || [],
   medicalConditions: data.medicalConditions || [],
-  emergencyContactName: data.emergencyContactName || data.emergencyName,
-  emergencyContactNumber: data.emergencyContactNumber || data.emergencyPhone,
+
+  emergencyContactName:
+    data.emergencyContactName || data.emergencyName,
+
+  emergencyContactNumber:
+    data.emergencyContactNumber || data.emergencyPhone,
+
   parentEmail: data.parentEmail,
   address: data.address,
+
   height: data.height ? Number(data.height) : undefined,
   weight: data.weight ? Number(data.weight) : undefined,
 });
