@@ -1,30 +1,39 @@
-import { useEffect, useState, useCallback } from 'react';
 import { FiPlus } from 'react-icons/fi';
 import PageTransition from '../../components/ui/PageTransition';
 import DataTable from '../../components/tables/DataTable';
 import Modal from '../../components/ui/Modal';
-import FormInput from '../../components/forms/FormInput';
-import FormTextarea from '../../components/forms/FormTextarea';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import ErrorState from '../../components/ui/ErrorState';
 import EmptyState from '../../components/ui/EmptyState';
-import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { medicalRecordService } from '../../services/medicalRecordService';
+import { studentService } from '../../services/studentService';
 import { formatDate } from '../../utils/helpers';
+import { useState, useEffect, useCallback } from 'react';
+import { getAIRecommendation } from '../../services/aiService';
+import AIRecommendationCard from '../../components/doctor/AIRecommendationCard';
+
 
 const PrescriptionManagement = () => {
   const [prescriptions, setPrescriptions] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const [patients, setPatients] = useState([]);
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [symptoms, setSymptoms] = useState('');
+  const [aiRecommendation, setAiRecommendation] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
 
   const fetchPrescriptions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { records } = await medicalRecordService.getAll();
+      const [{ records }, studentsData] = await Promise.all([
+        medicalRecordService.getAll(),
+        studentService.getAll(),
+      ]);
       const derived = records.flatMap((record) =>
         (record.medications || []).map((medication, index) => ({
           id: `${record.id}-${index}`,
@@ -37,12 +46,50 @@ const PrescriptionManagement = () => {
         }))
       );
       setPrescriptions(derived);
+      setPatients(studentsData.students || []);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleGenerateAI = async () => {
+    if (!selectedPatientId) {
+      setAiError('Select a patient before generating a recommendation.');
+      return;
+    }
+
+    if (!symptoms.trim()) {
+      setAiError('Enter current symptoms before generating a recommendation.');
+      return;
+    }
+
+    try {
+      setAiLoading(true);
+      setAiError(null);
+
+      const result = await getAIRecommendation(selectedPatientId, symptoms);
+
+      setAiRecommendation(result);
+
+      setSelectedMedicines(
+  (result.recommendedMedicines || []).map((med) => ({
+    ...med,
+    selected: true,
+  }))
+);
+
+      toast.success('AI recommendation generated');
+    } catch (error) {
+      console.error(error);
+      setAiError('Failed to generate recommendation. Please try again.');
+      toast.error('Failed to generate recommendation');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
 
   useEffect(() => {
     fetchPrescriptions();
@@ -64,10 +111,73 @@ const PrescriptionManagement = () => {
     { key: 'date', label: 'Date' },
   ];
 
-  const onSubmit = async (data) => {
-    toast.error('Prescriptions are managed through medical records. Create a new medical record to add medications.');
-    reset();
+  const selectedPatient = patients.find((patient) => patient.id === selectedPatientId);
+
+  const handleSavePrescription = async () => {
+  try {
+    if (!selectedPatientId) {
+      toast.error('Select a patient');
+      return;
+    }
+
+    if (!aiRecommendation) {
+      toast.error('Generate AI recommendation first');
+      return;
+    }
+
+    const payload = {
+      student: selectedPatientId,
+
+      symptoms: symptoms
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+
+      diagnosis:
+        aiRecommendation.possibleCondition ||
+        'AI Suggested Condition',
+
+      medications:
+  selectedMedicines
+    .filter((med) => med.selected)
+    .map((med) => med.name),
+
+      doctorNotes: `
+AI Reasoning:
+${aiRecommendation.reasoning}
+
+Urgency:
+${aiRecommendation.urgencyLevel}
+
+Disclaimer:
+${aiRecommendation.disclaimer}
+      `,
+
+      treatedBy: 'School Doctor',
+    };
+
+    await medicalRecordService.create(payload);
+
+    toast.success('Prescription saved');
+
+    closeModal();
+
+    fetchPrescriptions();
+  } catch (error) {
+    console.error(error);
+
+    toast.error('Failed to save prescription');
+  }
+};
+
+const [selectedMedicines, setSelectedMedicines] = useState([]);
+
+  const closeModal = () => {
     setModalOpen(false);
+    setSelectedPatientId('');
+    setSymptoms('');
+    setAiRecommendation(null);
+    setAiError(null);
   };
 
   if (loading) return <LoadingSpinner className="py-20" />;
@@ -78,7 +188,7 @@ const PrescriptionManagement = () => {
       <div className="space-y-6">
         <div className="flex justify-end">
           <button onClick={() => setModalOpen(true)} className="flex items-center gap-2 rounded-xl gradient-health px-4 py-2.5 text-sm font-semibold text-white">
-            <FiPlus className="h-4 w-4" /> New Prescription
+            <FiPlus className="h-4 w-4" /> AI Medicine Support
           </button>
         </div>
         <div className="glass-card">
@@ -89,15 +199,125 @@ const PrescriptionManagement = () => {
           )}
         </div>
 
-        <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="New Prescription">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <p className="text-sm text-slate-500">Prescriptions are added via medical records. Use the medical records page to create a record with medications.</p>
-            <FormInput label="Patient Name" name="patient" register={register} {...register('patient')} />
-            <FormInput label="Medication" name="medication" register={register} {...register('medication')} />
-            <FormInput label="Dosage" name="dosage" register={register} {...register('dosage')} />
-            <FormTextarea label="Notes" name="notes" register={register} />
-            <button type="submit" className="w-full rounded-xl gradient-health py-2.5 text-sm font-semibold text-white">Close</button>
-          </form>
+        <Modal isOpen={modalOpen} onClose={closeModal} title="AI Medicine Support">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-500">
+              Select a patient and enter current symptoms to generate an advisory recommendation.
+            </p>
+
+            <div>
+              <label htmlFor="prescription-ai-patient" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Patient
+              </label>
+              <select
+                id="prescription-ai-patient"
+                value={selectedPatientId}
+                onChange={(event) => {
+                  setSelectedPatientId(event.target.value);
+                  setAiRecommendation(null);
+                  setAiError(null);
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm outline-none focus:border-health-500 focus:ring-2 focus:ring-health-500/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-white"
+              >
+                <option value="">Select patient</option>
+                {patients.map((patient) => (
+                  <option key={patient.id} value={patient.id}>
+                    {patient.firstName} {patient.lastName} ({patient.studentId})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="prescription-ai-symptoms" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Current Symptoms
+              </label>
+              <textarea
+                id="prescription-ai-symptoms"
+                value={symptoms}
+                onChange={(event) => {
+                  setSymptoms(event.target.value);
+                  setAiError(null);
+                }}
+                rows={4}
+                placeholder="Fever, headache, nausea..."
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm outline-none focus:border-health-500 focus:ring-2 focus:ring-health-500/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-white"
+              />
+            </div>
+
+            {aiError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                {aiError}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleGenerateAI}
+              disabled={aiLoading || patients.length === 0}
+              className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {aiLoading ? 'Generating...' : 'Generate AI Recommendation'}
+            </button>
+
+            {aiRecommendation && (
+              <AIRecommendationCard recommendation={aiRecommendation} patient={selectedPatient} />
+            )}
+
+            <div className="mt-4 space-y-3">
+  <h4 className="font-semibold text-white">
+    Doctor Prescription Selection
+  </h4>
+
+  {selectedMedicines.map((med, index) => (
+    <label
+      key={index}
+      className="flex items-center gap-3"
+    >
+      <input
+        type="checkbox"
+        checked={med.selected}
+        onChange={() => {
+          setSelectedMedicines((prev) =>
+            prev.map((m, i) =>
+              i === index
+                ? { ...m, selected: !m.selected }
+                : m
+            )
+          );
+        }}
+      />
+
+      <span>
+        {med.name} ({med.dosage})
+      </span>
+    </label>
+  ))}
+</div>
+
+            <p className="text-sm text-slate-500">
+              Prescriptions are still recorded through medical records after clinical review.
+            </p>
+
+            <div className="flex gap-3">
+  <button
+    type="button"
+    onClick={handleSavePrescription}
+    disabled={!aiRecommendation}
+    className="flex-1 rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+  >
+    Save Prescription
+  </button>
+
+  <button
+    type="button"
+    onClick={closeModal}
+    className="flex-1 rounded-xl gradient-health py-2.5 text-sm font-semibold text-white"
+  >
+    Close
+  </button>
+</div>
+          </div>
         </Modal>
       </div>
     </PageTransition>
