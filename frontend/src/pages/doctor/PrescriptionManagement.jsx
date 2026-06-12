@@ -23,6 +23,19 @@ const PrescriptionManagement = () => {
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [symptoms, setSymptoms] = useState('');
   const [aiRecommendation, setAiRecommendation] = useState(null);
+  
+  const [manualMedicine, setManualMedicine] =
+  useState('');
+
+const [manualDosage, setManualDosage] =
+  useState('');
+
+const [manualMedicines, setManualMedicines] =
+  useState([]);
+
+const [doctorNotes, setDoctorNotes] =
+  useState('');
+
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
 
@@ -74,11 +87,15 @@ const PrescriptionManagement = () => {
       setAiRecommendation(result);
 
       setSelectedMedicines(
-  (result.recommendedMedicines || []).map((med) => ({
-    ...med,
-    selected: true,
-  }))
+  result.recommendedMedicines || []
 );
+
+  //     setSelectedMedicines(
+  // (result.recommendedMedicines || []).map((med) => ({
+  //   ...med,
+  //   selected: true,
+  // }))
+
 
       toast.success('AI recommendation generated');
     } catch (error) {
@@ -94,6 +111,41 @@ const PrescriptionManagement = () => {
   useEffect(() => {
     fetchPrescriptions();
   }, [fetchPrescriptions]);
+ 
+  const toggleMedicine = (medicine) => {
+  const exists = selectedMedicines.find(
+    (m) => m.name === medicine.name
+  );
+
+  if (exists) {
+    setSelectedMedicines(
+      selectedMedicines.filter(
+        (m) => m.name !== medicine.name
+      )
+    );
+  } else {
+    setSelectedMedicines([
+      ...selectedMedicines,
+      medicine,
+    ]);
+  }
+};
+
+const addManualMedicine = () => {
+  if (!manualMedicine.trim()) return;
+
+  setManualMedicines([
+    ...manualMedicines,
+    {
+      name: manualMedicine,
+      dosage: manualDosage,
+    },
+  ]);
+
+  setManualMedicine('');
+  setManualDosage('');
+};
+
 
   const columns = [
     { key: 'patient', label: 'Patient' },
@@ -261,44 +313,137 @@ const [selectedMedicines, setSelectedMedicines] = useState([]);
             </button>
 
             {aiRecommendation && (
-              <AIRecommendationCard recommendation={aiRecommendation} patient={selectedPatient} />
-            )}
+  <>
+    <AIRecommendationCard
+      recommendation={aiRecommendation}
+      patient={selectedPatient}
+    />
 
-            <div className="mt-4 space-y-3">
-  <h4 className="font-semibold text-white">
-    Doctor Prescription Selection
-  </h4>
+    {/* Doctor Prescription Builder */}
 
-  {selectedMedicines.map((med, index) => (
-    <label
-      key={index}
-      className="flex items-center gap-3"
-    >
-      <input
-        type="checkbox"
-        checked={med.selected}
-        onChange={() => {
-          setSelectedMedicines((prev) =>
-            prev.map((m, i) =>
-              i === index
-                ? { ...m, selected: !m.selected }
-                : m
+    <div className="mt-4 space-y-4 rounded-xl border border-slate-700 p-4">
+
+      <h3 className="text-lg font-semibold">
+        Doctor Prescription Selection
+      </h3>
+
+      {aiRecommendation.recommendedMedicines.map(
+        (medicine, index) => (
+          <label
+            key={index}
+            className="flex items-center gap-2"
+          >
+            <input
+              type="checkbox"
+              checked={
+                !!selectedMedicines.find(
+                  (m) => m.name === medicine.name
+                )
+              }
+              onChange={() =>
+                toggleMedicine(medicine)
+              }
+            />
+
+            {medicine.name}
+            {medicine.dosage
+              ? ` (${medicine.dosage})`
+              : ''}
+          </label>
+        )
+      )}
+
+      {/* Manual Medicine Section */}
+
+      <div className="space-y-3">
+
+        <h4 className="font-medium">
+          Add Manual Medicine
+        </h4>
+
+        <input
+          value={manualMedicine}
+          onChange={(e) =>
+            setManualMedicine(e.target.value)
+          }
+          placeholder="Medicine Name"
+          className="w-full rounded-lg border p-2"
+        />
+
+        <input
+          value={manualDosage}
+          onChange={(e) =>
+            setManualDosage(e.target.value)
+          }
+          placeholder="Dosage"
+          className="w-full rounded-lg border p-2"
+        />
+
+        <button
+          type="button"
+          onClick={addManualMedicine}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-white"
+        >
+          Add Medicine
+        </button>
+
+      </div>
+
+      {/* Final Prescription */}
+
+      <div className="rounded-xl border p-4">
+
+        <h4 className="mb-3 font-semibold">
+          Final Prescription
+        </h4>
+
+        <ul className="space-y-2">
+
+          {selectedMedicines.map(
+            (medicine, index) => (
+              <li key={index}>
+                • {medicine.name}
+                {medicine.dosage
+                  ? ` - ${medicine.dosage}`
+                  : ''}
+              </li>
             )
-          );
-        }}
+          )}
+
+          {manualMedicines.map(
+            (medicine, index) => (
+              <li key={`manual-${index}`}>
+                • {medicine.name}
+                {medicine.dosage
+                  ? ` - ${medicine.dosage}`
+                  : ''}
+              </li>
+            )
+          )}
+
+        </ul>
+
+      </div>
+
+      {/* Doctor Notes */}
+
+      <textarea
+        value={doctorNotes}
+        onChange={(e) =>
+          setDoctorNotes(e.target.value)
+        }
+        rows={4}
+        placeholder="Doctor Notes"
+        className="w-full rounded-lg border p-3"
       />
 
-      <span>
-        {med.name} ({med.dosage})
-      </span>
-    </label>
-  ))}
-</div>
+    </div>
+  </>
+)}
 
-            <p className="text-sm text-slate-500">
-              Prescriptions are still recorded through medical records after clinical review.
-            </p>
-
+<p className="text-sm text-slate-500">
+  Prescriptions are still recorded through medical records after clinical review.
+</p>
             <div className="flex gap-3">
   <button
     type="button"
